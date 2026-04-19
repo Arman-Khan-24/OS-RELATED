@@ -1,0 +1,3 @@
+@echo off
+echo Starting Time-Traveling Task Monitor...
+python app.py
