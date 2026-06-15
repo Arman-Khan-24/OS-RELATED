@@ -1,48 +1,53 @@
 # ⏳ Time-Traveling Task Monitor
 
-> A high-performance, cross-platform OS utility that seamlessly buffers system metric snapshots into a memory-safe `$O(1)$` data structure, allowing you to instantly "rewind time" to analyze historic performance spikes.
+![Python](https://img.shields.io/badge/Python-3.6+-blue?logo=python) ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey) ![Dependency](https://img.shields.io/badge/Dependency-psutil-green) ![License](https://img.shields.io/badge/License-MIT-yellow)
 
-## ⚠️ The Problem
-Standard operating system utilities like Windows Task Manager, Linux `top`, and `htop` are fundamentally flawed in diagnosing sudden, intermittent system spikes. 
-- Because they only display **real-time** states, if your computer experiences a massive 100% CPU freeze that lasts only 2 seconds, by the time you open the Task Manager to see what caused it, the offending process has already returned to normal or crashed out. 
-- You are left with no actionable data unless you intentionally log gigabytes of performance traces over hours to review later.
-
-## 🚀 Our Solution
-The **Time-Traveling Task Monitor** completely eliminates this blind spot. 
-If a system spike occurs while you are occupied, you simply press the **Left Arrow Key** on your keyboard to instantly "rewind time" and observe exactly which process caused the spike, exactly when it happened.
-- **What it solves:** It turns a fleeting, unobservable software anomaly into auditable, frozen historical intel without costing you any system performance.
+> A high-performance, cross-platform OS utility that buffers system metric snapshots into a memory-safe O(1) ring buffer, letting you instantly "rewind time" to diagnose historic performance spikes — built from scratch in Python with zero external GUI frameworks.
 
 ---
 
-## 🏗️ Architecture Breakdown
+## Demo
 
-This application runs on four concurrent architectural pillars specifically optimized for strict resource-constrained machines (e.g., older processors with limited RAM).
+![Time-Traveling Task Monitor Demo](demo.gif)
 
-### 1. The Data Collector (OS Metrics)
-At the heart of the application is the `DataCollector` class. 
-- It uses the cross-platform `psutil` library to securely interface with the operating system's kernel data.
-- During every tick, it requests the global CPU percentage, global RAM usage, and then iterates through every active process ID (PID) currently running on your machine.
-- It computationally tracks CPU deltas and bundles only the top 20 consuming processes into a `SystemSnapshot`.
+---
 
-### 2. The $O(1)$ Ring Buffer (Memory Safety)
-To prevent the history recorder from consuming all available RAM over time, we implemented a custom **Fixed-Size Ring Buffer**.
-- Unlike standard arrays that grow indefinitely, our `RingBuffer` is pre-allocated with a static size at launch (`[None] * 600`).
-- When the buffer hits 600 snapshots (10 minutes of history), a pointer wraps back to index `0` and overwrites the absolute oldest snapshot.
-- **Why it matters:** This guarantees the application operates in `$O(1)$` Static Memory. It uses the exact same amount of minuscule RAM at hour 10 as it did at second 1.
+## The Problem
 
-### 3. The Concurrency Engine (Background Thread)
-To ensure the GUI doesn't freeze while fetching statistics for hundreds of active PIDs, logic is decoupled using true concurrency.
-- A background `daemon` thread constantly operates a precision 1Hz sleep-timer.
-- It triggers the `DataCollector` and pushes the data to the `RingBuffer`.
-- It uses a `threading.Lock()` (Mutex) so that if the user pushes an arrow key to read history at the exact microsecond the background thread is saving new data, the render does not corrupt.
+Standard OS utilities like Windows Task Manager, Linux `top`, and `htop` are fundamentally blind to intermittent spikes.
 
-### 4. The Time-Machine Interface (Native GUI)
-The main execution thread is completely dedicated to rendering the Terminal UI and listening for keystrokes asynchronously.
-- **Cross-Platform Mapping:** A custom `get_keypress()` intercept detects whether you are on Windows (`msvcrt`) or Linux (`termios` & `select`) and translates raw hexadecimal/ANSI bytes of Arrow Keys into logical commands instantly. 
-- **Time Offset Navigation:** Pressing the Left Arrow moves the RingBuffer read-head backwards, instructing the UI to visually rewind the render states.
-- **Zero-Flicker Engineering:** Instead of clearing the entire screen and causing a visual blinking effect, the UI prints standard ANSI cursor resets (`\033[H`) to seamlessly paint new values directly over old characters like a canvas.
+- If your system hits 100% CPU for 2 seconds, by the time you open Task Manager, the offending process has already returned to normal or crashed out.
+- You're left with no actionable data unless you log gigabytes of performance traces over hours.
 
-## 📊 System Diagram
+**There is no built-in way to look back in time.**
+
+---
+
+## The Solution
+
+Press the **Left Arrow Key** to instantly rewind and see exactly which process caused the spike, exactly when it happened — with zero performance overhead and zero disk writes.
+
+---
+
+## Architecture
+
+Built on four concurrent pillars, specifically optimized for resource-constrained machines.
+
+### 1. Data Collector (OS Metrics)
+The `DataCollector` class uses `psutil` to interface directly with kernel data. On every tick it reads global CPU %, global RAM usage, iterates all active PIDs, tracks CPU deltas, and bundles the top 20 consuming processes into a `SystemSnapshot`.
+
+### 2. O(1) Ring Buffer (Memory Safety)
+A custom fixed-size `RingBuffer` pre-allocated at `[None] * 600` — 10 minutes of history. When full, a pointer wraps to index `0` and overwrites the oldest snapshot. Memory usage is identical at second 1 and hour 10. No unbounded growth, no GC pressure.
+
+### 3. Concurrency Engine (Background Thread)
+A background `daemon` thread runs a precision 1Hz timer — triggering the collector and pushing to the buffer independently of the UI thread. A `threading.Lock()` mutex prevents data corruption if a keystroke read and a buffer write collide at the same microsecond.
+
+### 4. Time-Machine Interface (Terminal UI)
+The main thread owns rendering and keystroke interception. A custom `get_keypress()` detects the OS at runtime — using `msvcrt` on Windows and `termios` + `select` on Linux/macOS — and translates raw ANSI/hex arrow key bytes into logical navigation commands. Zero-flicker rendering via ANSI cursor reset (`\033[H`) paints new values directly over old characters without clearing the screen.
+
+---
+
+## System Diagram
 
 ```mermaid
 graph TD
@@ -56,29 +61,34 @@ graph TD
     C -->|Read at Offset| H[Render Native ANSI GUI]
 ```
 
-## 🛠️ Installation & Setup
+---
 
-You can run this project locally on Windows, MacOS, or Linux. It requires zero heavy installations or C++ compilers.
+## Installation
 
-### Prerequisites
-- Python 3.6+
-- [psutil](https://pypi.org/project/psutil/) library
+Runs on Windows, Linux, and macOS. No compilers, no heavy dependencies.
 
-### Running the App
-1. Clone this repository to your local machine.
-2. Install the lightweight dependency:
-   ```bash
-   pip install psutil
-   ```
-3. Run the application:
-   ```bash
-   python app.py
-   ```
-   *(If you are on Windows, you can simply double-click the `run.bat` file!)*
+**Requirements:** Python 3.6+
 
-### Controls
-Inside the terminal, use the following keys without hitting Enter:
-- `<-` **Left Arrow**: Rewind Time
-- `->` **Right Arrow**: Forward Time
-- `Spacebar`: Jump instantly back to Live View
-- `Q`: Quit application
+```bash
+git clone https://github.com/Arman-Khan-24/OS-RELATED.git
+cd OS-RELATED
+pip install psutil
+python app.py
+```
+
+Windows users can double-click `run.bat` instead.
+
+---
+
+## Controls
+
+| Key | Action |
+|---|---|
+| `←` Left Arrow | Rewind time |
+| `→` Right Arrow | Forward time |
+| `Spacebar` | Jump to live view |
+| `Q` | Quit |
+
+---
+
+*Personal project — built to solve a real gap in OS diagnostic tooling.*
